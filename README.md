@@ -10,7 +10,7 @@ Requirement:
 
 2. LAPACK && Suitesparse && Eigen3.
 
-3. (optional) Viz module in opencv (needs compiling with VTK). Disable the display in the macro DISPLAY_3D.
+3. (optional) Viz module in opencv (needs compiling with VTK). Disable the display in the macro DISPLAY_3D(NOT IMPLEMENTED YET).
 
 Example:
 
