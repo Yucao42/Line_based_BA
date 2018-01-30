@@ -1,0 +1,166 @@
+#define DISPLAY_3D 1
+#include"../include/Optimizer.h"
+#include"../include/Converter.h"
+#include <iostream>
+#include <opencv2/core/opengl.hpp>
+#include "opencv2/opencv.hpp"
+#if DISPLAY_3D
+#include "opencv2/viz.hpp"
+#include<random>
+#endif
+#include "../g2o/types/se3quat.h"
+#include <string>
+#include <vector>
+
+#include <Eigen/Core>
+#include <Eigen/Geometry>
+
+using namespace std;
+using namespace cv;
+using namespace Eigen;
+using namespace g2o;
+
+#if DISPLAY_3D
+using namespace cv::viz;
+#endif
+
+#define DEGREE2RAD(x) ( (x) * CV_PI / 180.0)
+
+std::string intrinsic_filename = "../data/zed_final/intrinsics.yml";
+Mat M1;
+Matrix3d Cam_proj, M;
+static int seed = 0;
+
+//A uniformly distributed random number
+double uniform_rand(double lowerBndr, double upperBndr) {
+    std::srand((unsigned int)(time(NULL))+ seed++);
+    return lowerBndr + ((double) rand()) / (RAND_MAX + 1.0) * (upperBndr - lowerBndr);
+}
+
+//Gaussian random with a standard deviation of sigma
+double gauss_rand(double sigma) {
+  double x, y, r2, r;
+  do {
+    x = -1.0 + 2.0 * uniform_rand(0.0, 1.0);
+    y = -1.0 + 2.0 * uniform_rand(0.0, 1.0);
+    r2 = x * x + y * y;
+  } while (r2 > 1.0 || r2 == 0.0);
+  r= sigma * y * std::sqrt(-2.0 * log(r2) / r2);
+  return r;
+}
+
+//Generate a random pose with a rotation degree within max_r and translation within max_t
+SE3Quat PoseGenerator(double max_t, double max_r)
+{
+    // translation (meter), rotation (rad)
+    Vector3d _t;
+    std::srand(1);   
+    for(int i = 0; i < 3; i++)  
+    {  
+        _t[i] = uniform_rand(-max_t, max_t);  
+    }  
+
+    Vector3d rot;
+    //Rotation axies 
+    for(int i = 0; i < 3; i++)  
+    {  
+        rot[i] = uniform_rand(-1, 1);  
+    }  
+    rot = rot / rot.norm();
+    double theta = uniform_rand(-max_r, max_r);
+    rot = sin(theta/2) * rot;
+    double w = cos(theta/2);
+
+    Quaterniond _r(w, rot[0], rot[1], rot[2]);
+    return SE3Quat(_r, _t);
+}
+
+//Non-homogeneous 2d Line coordinates
+Vector2d line_func(Vector2d& a, Vector2d& b)
+{
+    double l1 = a[1] - b[1], l2 = b[0] - a[0], l3 = a[0]*b[1] - a[1]*b[0];
+    return Vector2d(l1/l3, l2/l3);
+}
+
+//Add Gaussian noise
+void add_noise(Vector2d& p, double sigma)
+{
+    p[0] += gauss_rand(sigma);
+    p[1] += gauss_rand(sigma);
+}
+
+//Projection from homogeneous to non-homogeneous
+Vector2d project_(const Vector3d& v)
+{
+    Vector2d res;
+    res(0) = v(0)/v(2);
+    res(1) = v(1)/v(2);
+    return res;
+}
+
+//Get camera intrinsic matrix from the calibration file
+void Camera_matx()
+{
+    if( !intrinsic_filename.empty() )
+    {
+        // reading intrinsic parameters
+        FileStorage fs(intrinsic_filename, FileStorage::READ);
+        fs["M1"] >> M1;
+	M1 = 4 * M1;
+        M1.at<double>(2,2) = 1;
+        cout<<"Calibrated:\n"<<M1<<endl;
+    }
+    M = Converter::toMatrix3d(M1);
+    Cam_proj = (Converter::toMatrix3d(M1)).inverse().transpose();
+}
+
+
+int main(int argc, char **argv){
+    Camera_matx();
+    int N  = 8;
+
+    //First generate a random pose.
+    double max_angle =20,  max_trans = 0.5, sig = 0.0;
+    SE3Quat pose = PoseGenerator(max_trans, DEGREE2RAD(max_angle));
+
+    //Then generate random 3D lines in world coordinates.
+    vector<Line3D> L_GT;
+    vector<Vector2d> l_GT;
+
+    //A single shot of line,world & camera coordinates
+    Line3D ss_w;
+    Vector2d ss_img, a_, b_;
+    Vector3d A, B;
+    L_GT.reserve(N);
+    for(int i = 0; i < N; i++)
+    {   
+        for(int j = 0; j < 2 ; j++)
+        {
+            A[j] = uniform_rand(-1, 1);
+            B[j] = uniform_rand(-1, 1);
+        }
+        A[2] = uniform_rand(0, 5);
+        B[2] = uniform_rand(0, 5);
+        ss_w = Line3D::fromEndpoints(A,B);
+        L_GT.push_back(ss_w);
+
+        a_ = project_(M * (pose * A));
+        b_ = project_(M * (pose * B));
+ 	    add_noise(a_, sig);
+ 	    add_noise(b_, sig);
+
+        ss_img = line_func(a_, b_);
+        add_noise(ss_img, sig);
+        l_GT.push_back(ss_img);
+    }
+
+    //Pose optimization using lines
+    double start = double(getTickCount());
+    PoseOptimizationLines(M1, L_GT, l_GT, cv::Mat::eye(4,4,CV_64F));
+    double duration_ms = (double(getTickCount()) - start) * 1000 / getTickFrequency();
+    std::cout << "It took " << duration_ms << " ms." << std::endl;
+
+    cv::Mat pose_GT = Converter::toCvMat(pose);
+    cout<<"Pose matrix:\n"<<pose_GT<<endl;
+    return 0;
+}
