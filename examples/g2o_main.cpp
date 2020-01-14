@@ -1,4 +1,5 @@
-#define DISPLAY_3D 1
+// Uncomment this if you have VIZ compiled with opencv
+// #define DISPLAY_3D 
 #include"../include/Optimizer.h"
 #include"../include/Converter.h"
 #include <iostream>

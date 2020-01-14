@@ -34,6 +34,7 @@ endif()
 SET(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${g2o_LIBRARY_OUTPUT_DIRECTORY})
 SET(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${g2o_LIBRARY_OUTPUT_DIRECTORY})
 SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${g2o_RUNTIME_OUTPUT_DIRECTORY})
+message(${g2o_SOURCE_DIR})
 
 # Set search directory for looking for our custom CMake scripts to
 # look for SuiteSparse, QGLViewer, and Eigen3.
@@ -92,6 +93,7 @@ ${g2o_SOURCE_DIR}/stuff
 ${G2O_EIGEN3_INCLUDE}
 ${g2o_SOURCE_DIR}/include
 ${OpenCV_INCLUDE_DIRS}
+${g2o_SOURCE_DIR}/
 )
 
 # Include the subdirectories
